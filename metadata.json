@@ -1,0 +1,6 @@
+{
+  "name": "Gemini Watermark Remover 3D",
+  "description": "Local in-browser watermark removal studio for images and PDFs with seamless upper-color matching, smart inpainting, and interactive 3D comparison viewer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
