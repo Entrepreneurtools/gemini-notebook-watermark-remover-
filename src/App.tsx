@@ -36,6 +36,7 @@ import {
 } from './types';
 import {
   autoDetectWatermark,
+  hasMaskPixels,
   processMultiWatermarkRemoval,
   processWatermarkRemoval,
 } from './lib/watermarkEngine';
@@ -58,6 +59,7 @@ export default function App() {
   // Active Canvases
   const [originalCanvas, setOriginalCanvas] = useState<HTMLCanvasElement | null>(null);
   const [processedCanvas, setProcessedCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [brushMaskCanvas, setBrushMaskCanvas] = useState<HTMLCanvasElement | null>(null);
 
   // Watermark Bounding Boxes (supports single or multi-zone)
   const [watermarkBoxes, setWatermarkBoxes] = useState<WatermarkBox[]>([
@@ -84,7 +86,7 @@ export default function App() {
       enabled: false,
       actionType: 'inpaint',
       logoDataUrl: null,
-      badgeText: 'itstudent.com',
+      badgeText: 'itsstudent.com',
       textColor: '#000000',
       fontSize: 18,
       fontFamily: 'sans',
@@ -194,7 +196,7 @@ export default function App() {
 
     setTimeout(() => {
       try {
-        const cleaned = processMultiWatermarkRemoval(originalCanvas, watermarkBoxes, settings);
+        const cleaned = processMultiWatermarkRemoval(originalCanvas, watermarkBoxes, settings, brushMaskCanvas);
         setProcessedCanvas(cleaned);
         setShowProcessed(true);
         setHasProcessed(true);
@@ -216,7 +218,33 @@ export default function App() {
         setIsProcessing(false);
       }
     }, 60);
-  }, [originalCanvas, watermarkBoxes, settings, pdfPages, currentPdfPageIndex, watermarkBox]);
+  }, [originalCanvas, watermarkBoxes, settings, brushMaskCanvas, pdfPages, currentPdfPageIndex, watermarkBox]);
+
+  // Handle Free-Form Brush Mask Change & Live Inpainting
+  const handleBrushMaskChange = useCallback(
+    (mask: HTMLCanvasElement | null) => {
+      setBrushMaskCanvas(mask);
+      if (originalCanvas) {
+        const cleaned = processMultiWatermarkRemoval(originalCanvas, watermarkBoxes, settings, mask);
+        setProcessedCanvas(cleaned);
+        setShowProcessed(true);
+        setHasProcessed(true);
+        if (mask && hasMaskPixels(mask)) {
+          setStatusMessage('✓ Eraser brush inpainting applied seamlessly over painted watermark.');
+        }
+        if (pdfPages.length > 0) {
+          const updated = [...pdfPages];
+          updated[currentPdfPageIndex] = {
+            ...updated[currentPdfPageIndex],
+            processedCanvasDataUrl: cleaned.toDataURL('image/png'),
+            watermarkBox,
+          };
+          setPdfPages(updated);
+        }
+      }
+    },
+    [originalCanvas, watermarkBoxes, settings, pdfPages, currentPdfPageIndex, watermarkBox]
+  );
 
   // Handle Automatic Re-detection on demand
   const handleAutoDetect = useCallback(() => {
@@ -232,13 +260,40 @@ export default function App() {
     setStatusMessage('✨ Auto-detected watermark badge and refreshed clean result.');
   }, [originalCanvas, settings]);
 
-  // Handle Re-processing when box or settings change if already processed
+  // Handle Settings changes with instantaneous real-time canvas update
+  const handleSettingsChange = useCallback(
+    (newSettings: RemovalSettings) => {
+      setSettings(newSettings);
+      if (originalCanvas) {
+        const cleaned = processMultiWatermarkRemoval(
+          originalCanvas,
+          watermarkBoxes,
+          newSettings,
+          brushMaskCanvas
+        );
+        setProcessedCanvas(cleaned);
+        setShowProcessed(true);
+        setHasProcessed(true);
+        if (pdfPages.length > 0 && pdfPages[currentPdfPageIndex]) {
+          const updated = [...pdfPages];
+          updated[currentPdfPageIndex] = {
+            ...updated[currentPdfPageIndex],
+            processedCanvasDataUrl: cleaned.toDataURL('image/png'),
+          };
+          setPdfPages(updated);
+        }
+      }
+    },
+    [originalCanvas, watermarkBoxes, brushMaskCanvas, pdfPages, currentPdfPageIndex]
+  );
+
+  // Handle Re-processing when box, settings, or brush mask change if already processed
   useEffect(() => {
     if (originalCanvas && hasProcessed) {
-      const cleaned = processMultiWatermarkRemoval(originalCanvas, watermarkBoxes, settings);
+      const cleaned = processMultiWatermarkRemoval(originalCanvas, watermarkBoxes, settings, brushMaskCanvas);
       setProcessedCanvas(cleaned);
     }
-  }, [watermarkBoxes, settings]);
+  }, [watermarkBoxes, settings, brushMaskCanvas]);
 
   // Handle PDF Batch Processing ("Apply to all pages")
   const handleApplyToAllPages = async () => {
@@ -249,7 +304,7 @@ export default function App() {
       const updatedPages: PdfPageData[] = [];
       for (const page of pdfPages) {
         const pageCanvas = await dataUrlToCanvas(page.originalCanvasDataUrl);
-        const cleanedCanvas = processMultiWatermarkRemoval(pageCanvas, watermarkBoxes, settings);
+        const cleanedCanvas = processMultiWatermarkRemoval(pageCanvas, watermarkBoxes, settings, brushMaskCanvas);
         updatedPages.push({
           ...page,
           processedCanvasDataUrl: cleanedCanvas.toDataURL('image/png'),
@@ -292,7 +347,7 @@ export default function App() {
       const proc = await dataUrlToCanvas(targetPage.processedCanvasDataUrl);
       setProcessedCanvas(proc);
     } else {
-      const proc = processMultiWatermarkRemoval(orig, watermarkBoxes, settings);
+      const proc = processMultiWatermarkRemoval(orig, watermarkBoxes, settings, brushMaskCanvas);
       setProcessedCanvas(proc);
     }
   };
@@ -615,9 +670,11 @@ export default function App() {
                 settings={settings}
                 showProcessed={showProcessed}
                 onToggleProcessed={() => setShowProcessed(!showProcessed)}
-                brushMaskCanvas={null}
+                brushMaskCanvas={brushMaskCanvas}
+                onBrushMaskChange={handleBrushMaskChange}
                 isProcessing={isProcessing}
                 onAutoDetect={handleAutoDetect}
+                onApplyRemoval={handleApplyRemoval}
               />
             )}
 
@@ -655,12 +712,13 @@ export default function App() {
           {/* Removal Controls & Fine-Tuning Panel (Clean, non-chaotic drawer) */}
           <RemovalControls
             settings={settings}
-            onSettingsChange={setSettings}
+            onSettingsChange={handleSettingsChange}
             onApplyRemoval={handleApplyRemoval}
             onReset={() => {
               if (originalCanvas) {
                 setProcessedCanvas(originalCanvas);
                 setShowProcessed(false);
+                setBrushMaskCanvas(null);
                 setStatusMessage('Reset canvas back to original watermark.');
               }
             }}
@@ -673,24 +731,125 @@ export default function App() {
             onAddBox={handleAddBox}
           />
 
-          {/* Technical Explainer (Non-intrusive footer card) */}
-          <section className="p-5 rounded-2xl bg-slate-900/30 border border-slate-800 text-xs text-slate-400 flex flex-col gap-3">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-              <Cpu className="w-4 h-4 text-indigo-400" />
-              Seamless Inpainting Architecture
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-slate-300">
-              <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
-                <strong className="text-indigo-400 block mb-1">1. Upper Color Sampling</strong>
-                Samples color profile directly above the watermark boundary ({settings.sampleBandHeight}px) so background gradients transition smoothly.
+          {/* Comprehensive SEO / AEO / GEO Knowledge Base & Architecture */}
+          <section className="p-6 rounded-2xl bg-slate-900/40 border border-slate-800 text-xs text-slate-400 flex flex-col gap-6">
+            <div>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  Universal Support
+                </span>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  geminiwatermarkremover.itsstudent.com
+                </span>
               </div>
-              <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
-                <strong className="text-indigo-400 block mb-1">2. Continuous Gradient Flow</strong>
-                Propagates luminance slope downward across the logo zone, avoiding visible patches or flat rectangular artifacts.
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                Remove Google Gemini, NotebookLM & Any Watermark Seamlessly
+              </h2>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed max-w-4xl">
+                Advanced browser-native inpainting engine designed to dissolve watermarks, AI star badges, system timestamps, and stock overlays using upper-color gradient extrapolation, 4-sided Hermite feathering, and sensor noise synthesis.
+              </p>
+            </div>
+
+            {/* 4-Card Universal Feature Matrix */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 text-slate-300">
+              <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/90 flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs">
+                  <Sparkles className="w-4 h-4 text-indigo-400 shrink-0" />
+                  <span>Google Gemini AI</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-normal">
+                  Automatically isolates and eliminates the Google Gemini sparkle watermark in the bottom corner of generated illustrations and photorealistic artwork with zero blur.
+                </p>
               </div>
-              <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
-                <strong className="text-indigo-400 block mb-1">3. Mathematical Verification</strong>
-                Switch to <strong>Diff Heatmap</strong> to inspect modified pixels with zero alteration to surrounding infographics or text.
+
+              <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/90 flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
+                  <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Gemini NotebookLM</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-normal">
+                  Cleans multi-page PDF exports from Gemini NotebookLM, removing repetitive header stamps, footers, source labels, and export badges across every page in seconds.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/90 flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
+                  <Wand2 className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Any Watermark & Logo</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-normal">
+                  Universal support for stock photo stamps (Shutterstock, Getty, iStock), Canva watermarks, date/time overlays, signatures, and draft stamps with brush and box masking.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/90 flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 text-violet-400 font-bold text-xs">
+                  <ShieldCheck className="w-4 h-4 text-violet-400 shrink-0" />
+                  <span>100% Client-Side Privacy</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-normal">
+                  Processing runs locally inside your browser via WebAssembly & Canvas. Your sensitive documents, photos, and PDFs are never uploaded to any cloud server.
+                </p>
+              </div>
+            </div>
+
+            {/* Answer Engine Optimization (AEO / GEO) Interactive FAQ */}
+            <div className="border-t border-slate-800/80 pt-5 space-y-3">
+              <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-indigo-400" />
+                Frequently Asked Questions (AEO & GEO Knowledge)
+              </h3>
+
+              <div className="space-y-2">
+                <details className="group p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs">
+                  <summary className="font-semibold text-slate-200 cursor-pointer list-none flex items-center justify-between">
+                    <span>How do I remove the Google Gemini watermark from AI images?</span>
+                    <span className="text-indigo-400 group-open:rotate-180 transition-transform text-sm">▾</span>
+                  </summary>
+                  <p className="text-slate-400 mt-2 leading-relaxed text-[11px]">
+                    Simply drag and drop your Gemini-generated image into geminiwatermarkremover.itsstudent.com. The studio auto-detects the sparkle watermark in the bottom corner and reconstructs the background using upper-color gradient extrapolation. Click Download PNG to retrieve your clean file.
+                  </p>
+                </details>
+
+                <details className="group p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs">
+                  <summary className="font-semibold text-slate-200 cursor-pointer list-none flex items-center justify-between">
+                    <span>Can I remove watermarks from Gemini NotebookLM PDF exports?</span>
+                    <span className="text-indigo-400 group-open:rotate-180 transition-transform text-sm">▾</span>
+                  </summary>
+                  <p className="text-slate-400 mt-2 leading-relaxed text-[11px]">
+                    Yes. Upload your NotebookLM multi-page PDF. You can position the watermark bounding box over the header or footer banner, test the removal, and click "Apply to All Pages" to batch-clean every page of the document at once before downloading.
+                  </p>
+                </details>
+
+                <details className="group p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs">
+                  <summary className="font-semibold text-slate-200 cursor-pointer list-none flex items-center justify-between">
+                    <span>Does geminiwatermarkremover.itsstudent.com support all other watermarks?</span>
+                    <span className="text-indigo-400 group-open:rotate-180 transition-transform text-sm">▾</span>
+                  </summary>
+                  <p className="text-slate-400 mt-2 leading-relaxed text-[11px]">
+                    Yes. In addition to Google Gemini and NotebookLM, it works universally on Canva watermarks, stock photo grid overlays, camera timestamps, signatures, copyright marks, and document confidential stamps. Use the Eraser Brush for non-rectangular or scattered watermarks.
+                  </p>
+                </details>
+
+                <details className="group p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs">
+                  <summary className="font-semibold text-slate-200 cursor-pointer list-none flex items-center justify-between">
+                    <span>How does the real-time feathering slider eliminate visible boundary lines?</span>
+                    <span className="text-indigo-400 group-open:rotate-180 transition-transform text-sm">▾</span>
+                  </summary>
+                  <p className="text-slate-400 mt-2 leading-relaxed text-[11px]">
+                    The real-time feathering slider computes a 4-sided Hermite smoothstep transition across Top, Left, Right, and Bottom borders. By blending the extrapolated background with surrounding pixels and matching natural sensor noise, it dissolves box outlines even on complex gradients.
+                  </p>
+                </details>
+
+                <details className="group p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs">
+                  <summary className="font-semibold text-slate-200 cursor-pointer list-none flex items-center justify-between">
+                    <span>Can I replace watermarks with my own itsstudent.com or brand badge?</span>
+                    <span className="text-indigo-400 group-open:rotate-180 transition-transform text-sm">▾</span>
+                  </summary>
+                  <p className="text-slate-400 mt-2 leading-relaxed text-[11px]">
+                    Yes! Under Watermark Treatment, select "Clean + Brand Logo" or "Direct Logo Patch". You can upload your own PNG/SVG logo or generate a stylish pill badge with custom text like itsstudent.com, complete with customizable colors, padding, and drop shadows.
+                  </p>
+                </details>
               </div>
             </div>
           </section>
@@ -771,9 +930,9 @@ export default function App() {
                 🔒
               </div>
               <div>
-                <p className="text-[11px] font-bold text-white">Local Processing</p>
+                <p className="text-[11px] font-bold text-white">Local Privacy Protected</p>
                 <p className="text-[10px] text-slate-400 leading-tight">
-                  Files never leave your browser. GPU & Canvas accelerated.
+                  Files never leave your browser. GPU & HTML5 Canvas accelerated.
                 </p>
               </div>
             </div>
@@ -781,7 +940,7 @@ export default function App() {
         </aside>
       </div>
 
-      {/* Sleek Interface Bottom Ticker Bar */}
+      {/* Rebranded Interface Bottom Ticker Bar */}
       <footer className="h-8 bg-indigo-600 flex items-center px-6 justify-between text-[10px] font-medium text-white select-none z-20 shrink-0">
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1.5">
@@ -791,11 +950,11 @@ export default function App() {
           <span className="hidden sm:inline text-indigo-200">•</span>
           <span className="hidden sm:inline">GPU ACCELERATION: ACTIVE</span>
           <span className="hidden md:inline text-indigo-200">•</span>
-          <span className="hidden md:inline">IN-PAINT: UPPER-COLOR EXTRAPOLATION</span>
+          <span className="hidden md:inline">geminiwatermarkremover.itsstudent.com</span>
         </div>
         <div className="flex items-center gap-4 font-mono">
-          <span>VERSION 2.1.0</span>
-          <span className="hidden sm:inline">© 2026 WASH TOOLS</span>
+          <span>VERSION 3.0.0</span>
+          <span className="hidden sm:inline">© 2026 ITSSTUDENT.COM</span>
         </div>
       </footer>
     </div>

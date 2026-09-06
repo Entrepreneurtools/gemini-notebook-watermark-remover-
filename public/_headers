@@ -1,0 +1,16 @@
+# Cloudflare Pages custom headers
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/pdf.worker.min.mjs
+  Cache-Control: public, max-age=31536000, immutable
+  Content-Type: application/javascript; charset=utf-8
+
+/samples/*
+  Cache-Control: public, max-age=86400

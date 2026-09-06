@@ -13,11 +13,21 @@ import {
   Plus,
   RefreshCw,
   Sliders,
+  SlidersHorizontal,
   Sparkles,
   Wand2,
+  Zap,
 } from 'lucide-react';
 import { LogoOverlaySettings, RemovalAlgorithm, RemovalSettings } from '../types';
 import { LogoOverlayControl } from './LogoOverlayControl';
+
+function getFeatherDescription(px: number): string {
+  if (px <= 2) return 'Sharp Edge';
+  if (px <= 7) return 'Soft Natural';
+  if (px <= 14) return 'Smooth Gradient';
+  if (px <= 24) return 'Wide Transition';
+  return 'Ultra Seamless';
+}
 
 interface RemovalControlsProps {
   settings: RemovalSettings;
@@ -213,6 +223,92 @@ export const RemovalControls: React.FC<RemovalControlsProps> = ({
         </div>
       </div>
 
+      {/* Real-Time Edge Feathering & Blend Radius Slider */}
+      <div className="p-4 rounded-xl bg-slate-950/70 border border-indigo-500/35 shadow-lg shadow-indigo-950/20">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
+          <div className="flex items-start sm:items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5 sm:mt-0">
+              <SlidersHorizontal className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <label htmlFor="slider-feather-realtime" className="text-xs font-bold text-white tracking-wide cursor-pointer">
+                  Feathering Radius (Seamless Edge Blending)
+                </label>
+                <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 font-semibold border border-emerald-500/30">
+                  <Zap className="w-2.5 h-2.5 text-emerald-400" />
+                  Instant Live Update
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-tight mt-0.5">
+                Softens boundary edges in real-time to dissolve seams into complex backgrounds and textures.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+            <span className="text-xs font-mono font-bold text-indigo-300 bg-indigo-950/80 border border-indigo-500/40 px-3 py-1.5 rounded-lg shadow-sm">
+              {settings.featherRadius} px{' '}
+              <span className="text-[10px] text-indigo-400 font-sans font-semibold ml-1">
+                ({getFeatherDescription(settings.featherRadius)})
+              </span>
+            </span>
+          </div>
+        </div>
+
+        {/* Real-time Interactive Range Slider */}
+        <div className="space-y-2">
+          <input
+            id="slider-feather-realtime"
+            type="range"
+            min="1"
+            max="35"
+            step="1"
+            value={settings.featherRadius}
+            onChange={(e) =>
+              onSettingsChange({
+                ...settings,
+                featherRadius: Number(e.target.value),
+              })
+            }
+            className="w-full accent-indigo-500 cursor-pointer h-2 bg-slate-800 rounded-lg appearance-none transition-all hover:bg-slate-700/80 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+          />
+
+          {/* Quick Presets for Instant One-Click Testing */}
+          <div className="flex flex-wrap items-center justify-between gap-1.5 pt-0.5">
+            <span className="text-[10px] text-slate-500 font-mono">1px (Sharp)</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { label: 'Sharp', px: 2 },
+                { label: 'Soft', px: 6 },
+                { label: 'Smooth', px: 12 },
+                { label: 'Deep', px: 20 },
+                { label: 'Max Blend', px: 30 },
+              ].map((preset) => (
+                <button
+                  key={preset.px}
+                  type="button"
+                  onClick={() =>
+                    onSettingsChange({
+                      ...settings,
+                      featherRadius: preset.px,
+                    })
+                  }
+                  className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-all ${
+                    settings.featherRadius === preset.px
+                      ? 'bg-indigo-600 text-white shadow-sm font-bold scale-105'
+                      : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-700/80'
+                  }`}
+                >
+                  {preset.label} ({preset.px}px)
+                </button>
+              ))}
+            </div>
+            <span className="text-[10px] text-slate-500 font-mono">35px (Max)</span>
+          </div>
+        </div>
+      </div>
+
       {/* Brand Logo & Website Badge Overlay Control */}
       <LogoOverlayControl
         overlaySettings={currentOverlay}
@@ -336,7 +432,7 @@ export const RemovalControls: React.FC<RemovalControlsProps> = ({
                     id="slider-feather-radius"
                     type="range"
                     min="1"
-                    max="25"
+                    max="35"
                     value={settings.featherRadius}
                     onChange={(e) =>
                       onSettingsChange({
@@ -347,8 +443,8 @@ export const RemovalControls: React.FC<RemovalControlsProps> = ({
                     className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
                   />
                   <div className="flex justify-between text-[10px] text-slate-500 mt-1 font-mono">
-                    <span>1px</span>
-                    <span>25px</span>
+                    <span>1px (Sharp)</span>
+                    <span>35px (Ultra Soft)</span>
                   </div>
                 </div>
 

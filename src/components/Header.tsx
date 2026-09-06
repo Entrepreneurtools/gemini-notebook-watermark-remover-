@@ -47,16 +47,25 @@ export const Header: React.FC<HeaderProps> = ({
     <nav className="flex items-center justify-between px-4 sm:px-8 py-3 border-b border-slate-800 bg-slate-900/60 backdrop-blur-md sticky top-0 z-30">
       {/* Brand Identity */}
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20 text-base tracking-wider">
-          W
+        <div className="w-8 h-8 bg-gradient-to-tr from-indigo-600 to-violet-500 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/25 text-base tracking-wider shrink-0">
+          <Sparkles className="w-4 h-4 text-white" />
         </div>
-        <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
-          <span className="text-lg sm:text-xl font-semibold tracking-tight text-white">
-            WashPDF <span className="text-indigo-400 font-normal">Local</span>
-          </span>
-          <span className="text-[11px] text-slate-500 font-medium hidden md:inline">
-            Automatic Watermark Cleaner
-          </span>
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2">
+            <span className="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-1.5">
+              Gemini <span className="text-indigo-400 font-semibold">Watermark Remover</span>
+            </span>
+            <span className="hidden xl:inline text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 font-medium border border-indigo-500/30">
+              Gemini & NotebookLM & All
+            </span>
+          </div>
+          <a
+            href="https://geminiwatermarkremover.itsstudent.com"
+            className="text-[11px] text-slate-400 hover:text-indigo-300 transition-colors font-mono tracking-tight"
+            title="Visit geminiwatermarkremover.itsstudent.com"
+          >
+            geminiwatermarkremover.itsstudent.com
+          </a>
         </div>
       </div>
 

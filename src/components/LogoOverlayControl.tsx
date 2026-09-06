@@ -327,20 +327,36 @@ export const LogoOverlayControl: React.FC<LogoOverlayControlProps> = ({
                   <Type className="w-3.5 h-3.5 text-indigo-400" />
                   Brand Text or Website
                 </label>
-                {/* One click preset as requested by user! */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onChange({
-                      ...overlaySettings,
-                      badgeText: 'itstudent.com',
-                    });
-                    setTimeout(onRefreshCanvas, 30);
-                  }}
-                  className="text-[10px] text-amber-400 hover:text-amber-300 underline font-semibold flex items-center gap-1 cursor-pointer"
-                >
-                  Use Example: "itstudent.com"
-                </button>
+                {/* One click presets for itsstudent.com and geminiwatermarkremover.itsstudent.com */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange({
+                        ...overlaySettings,
+                        badgeText: 'itsstudent.com',
+                      });
+                      setTimeout(onRefreshCanvas, 30);
+                    }}
+                    className="text-[10px] text-amber-400 hover:text-amber-300 underline font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    "itsstudent.com"
+                  </button>
+                  <span className="text-slate-600">•</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange({
+                        ...overlaySettings,
+                        badgeText: 'geminiwatermarkremover.itsstudent.com',
+                      });
+                      setTimeout(onRefreshCanvas, 30);
+                    }}
+                    className="text-[10px] text-indigo-400 hover:text-indigo-300 underline font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    "geminiwatermarkremover.itsstudent.com"
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -355,7 +371,7 @@ export const LogoOverlayControl: React.FC<LogoOverlayControlProps> = ({
                       });
                       setTimeout(onRefreshCanvas, 30);
                     }}
-                    placeholder="e.g. itstudent.com"
+                    placeholder="e.g. itsstudent.com"
                     className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs font-semibold placeholder:text-slate-600 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
                   />
                   {overlaySettings.badgeText && (

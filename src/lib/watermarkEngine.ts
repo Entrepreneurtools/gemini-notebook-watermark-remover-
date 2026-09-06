@@ -173,7 +173,7 @@ function applyUpperColorSeamlessFill(
   maskData: Uint8ClampedArray | null
 ) {
   const sampleDepth = Math.max(3, Math.min(60, settings.sampleBandHeight));
-  const feather = Math.max(1, Math.min(30, settings.featherRadius));
+  const feather = Math.max(1, Math.min(50, settings.featherRadius));
   const grainFactor = (settings.grainAmount || 20) / 100;
 
   // Band above watermark: [startY - sampleDepth, startY - 1]
@@ -192,11 +192,27 @@ function applyUpperColorSeamlessFill(
 
   for (let c = 0; c < w; c++) {
     const px = startX + c;
+
+    // When a brush mask is provided, find the highest painted pixel in this specific column
+    let colStartY = startY;
+    if (maskData) {
+      for (let r = 0; r < h; r++) {
+        const checkIdx = ((startY + r) * imgW + px) * 4;
+        if (maskData[checkIdx + 3] > 10) {
+          colStartY = startY + r;
+          break;
+        }
+      }
+    }
+
+    const upperYStart = Math.max(0, colStartY - sampleDepth);
+    const actualUpperDepth = Math.max(1, colStartY - upperYStart);
+
     let sumR = 0, sumG = 0, sumB = 0;
     let topR = 0, topG = 0, topB = 0;
     let bottomR = 0, bottomG = 0, bottomB = 0;
 
-    for (let sy = upperYStart; sy < startY; sy++) {
+    for (let sy = upperYStart; sy < colStartY; sy++) {
       const idx = (sy * imgW + px) * 4;
       const r = data[idx];
       const g = data[idx + 1];
@@ -208,7 +224,7 @@ function applyUpperColorSeamlessFill(
       if (sy === upperYStart) {
         topR = r; topG = g; topB = b;
       }
-      if (sy === startY - 1) {
+      if (sy === colStartY - 1) {
         bottomR = r; bottomG = g; bottomB = b;
       }
 
@@ -239,10 +255,20 @@ function applyUpperColorSeamlessFill(
 
   const avgNoise = noiseSampleCount > 0 ? (globalNoiseSum / noiseSampleCount) : 4;
 
-  // Retrieve border pixels for edge feathering
+  // Retrieve border pixels for 4-sided edge feathering
   const leftBorder = new Float32Array(h * 3);
   const rightBorder = new Float32Array(h * 3);
   const bottomBorder = new Float32Array(w * 3);
+  const topBorder = new Float32Array(w * 3);
+
+  // Top border pixels (at startY - 1)
+  const topY = Math.max(0, startY - 1);
+  for (let c = 0; c < w; c++) {
+    const idx = (topY * imgW + (startX + c)) * 4;
+    topBorder[c * 3] = data[idx];
+    topBorder[c * 3 + 1] = data[idx + 1];
+    topBorder[c * 3 + 2] = data[idx + 2];
+  }
 
   // Left border pixels (at startX - 1)
   const leftX = Math.max(0, startX - 1);
@@ -292,8 +318,9 @@ function applyUpperColorSeamlessFill(
       const idx = (py * imgW + px) * 4;
 
       // Check mask if brush masking is used
+      let maskAlpha = 255;
       if (maskData) {
-        const maskAlpha = maskData[idx + 3];
+        maskAlpha = maskData[idx + 3];
         if (maskAlpha < 10) continue; // Skip untouched areas
       }
 
@@ -302,28 +329,39 @@ function applyUpperColorSeamlessFill(
       let targetG = columnUpper[c * 3 + 1] + columnSlope[c * 3 + 1] * r;
       let targetB = columnUpper[c * 3 + 2] + columnSlope[c * 3 + 2] * r;
 
-      // Left edge feathering
-      if (c < feather) {
-        const factor = 1 - smoothstep(0, feather, c);
-        targetR = targetR * (1 - factor) + leftBorder[r * 3] * factor;
-        targetG = targetG * (1 - factor) + leftBorder[r * 3 + 1] * factor;
-        targetB = targetB * (1 - factor) + leftBorder[r * 3 + 2] * factor;
-      }
+      // Rectangular edge feathering only if not using arbitrary brush mask
+      if (!maskData) {
+        // Top edge feathering for smooth seamless transition with upper background
+        if (startY > 0 && r < feather) {
+          const factor = 1 - smoothstep(0, feather, r);
+          targetR = targetR * (1 - factor) + topBorder[c * 3] * factor;
+          targetG = targetG * (1 - factor) + topBorder[c * 3 + 1] * factor;
+          targetB = targetB * (1 - factor) + topBorder[c * 3 + 2] * factor;
+        }
 
-      // Right edge feathering
-      if (c > w - feather) {
-        const factor = smoothstep(w - feather, w, c);
-        targetR = targetR * (1 - factor) + rightBorder[r * 3] * factor;
-        targetG = targetG * (1 - factor) + rightBorder[r * 3 + 1] * factor;
-        targetB = targetB * (1 - factor) + rightBorder[r * 3 + 2] * factor;
-      }
+        // Left edge feathering
+        if (c < feather) {
+          const factor = 1 - smoothstep(0, feather, c);
+          targetR = targetR * (1 - factor) + leftBorder[r * 3] * factor;
+          targetG = targetG * (1 - factor) + leftBorder[r * 3 + 1] * factor;
+          targetB = targetB * (1 - factor) + leftBorder[r * 3 + 2] * factor;
+        }
 
-      // Bottom edge feathering (if close to bottom boundary and not out of image)
-      if (botY < imgH - 1 && r > h - feather) {
-        const factor = smoothstep(h - feather, h, r);
-        targetR = targetR * (1 - factor) + bottomBorder[c * 3] * factor;
-        targetG = targetG * (1 - factor) + bottomBorder[c * 3 + 1] * factor;
-        targetB = targetB * (1 - factor) + bottomBorder[c * 3 + 2] * factor;
+        // Right edge feathering
+        if (c > w - feather) {
+          const factor = smoothstep(w - feather, w, c);
+          targetR = targetR * (1 - factor) + rightBorder[r * 3] * factor;
+          targetG = targetG * (1 - factor) + rightBorder[r * 3 + 1] * factor;
+          targetB = targetB * (1 - factor) + rightBorder[r * 3 + 2] * factor;
+        }
+
+        // Bottom edge feathering (if close to bottom boundary and not out of image)
+        if (botY < imgH - 1 && r > h - feather) {
+          const factor = smoothstep(h - feather, h, r);
+          targetR = targetR * (1 - factor) + bottomBorder[c * 3] * factor;
+          targetG = targetG * (1 - factor) + bottomBorder[c * 3 + 1] * factor;
+          targetB = targetB * (1 - factor) + bottomBorder[c * 3 + 2] * factor;
+        }
       }
 
       // Synthesize micro-texture noise matching background sensor variance
@@ -332,10 +370,21 @@ function applyUpperColorSeamlessFill(
       targetG += noise;
       targetB += noise;
 
-      // Write clamped pixel
-      data[idx] = Math.max(0, Math.min(255, Math.round(targetR)));
-      data[idx + 1] = Math.max(0, Math.min(255, Math.round(targetG)));
-      data[idx + 2] = Math.max(0, Math.min(255, Math.round(targetB)));
+      const finalR = Math.max(0, Math.min(255, Math.round(targetR)));
+      const finalG = Math.max(0, Math.min(255, Math.round(targetG)));
+      const finalB = Math.max(0, Math.min(255, Math.round(targetB)));
+
+      // Write clamped pixel with anti-aliased edge blending for brush strokes
+      if (maskData && maskAlpha < 255) {
+        const blend = maskAlpha / 255;
+        data[idx] = Math.round(data[idx] * (1 - blend) + finalR * blend);
+        data[idx + 1] = Math.round(data[idx + 1] * (1 - blend) + finalG * blend);
+        data[idx + 2] = Math.round(data[idx + 2] * (1 - blend) + finalB * blend);
+      } else {
+        data[idx] = finalR;
+        data[idx + 1] = finalG;
+        data[idx + 2] = finalB;
+      }
       data[idx + 3] = 255; // Full opacity
     }
   }
@@ -509,10 +558,26 @@ function applyTeleaInpaint(
   for (let r = 1; r < h - 1; r++) {
     for (let c = 1; c < w - 1; c++) {
       const idx = ((startY + r) * imgW + (startX + c)) * 4;
-      const tIdx = (r * w + c) * 3;
-      data[idx] = temp[tIdx];
-      data[idx + 1] = temp[tIdx + 1];
-      data[idx + 2] = temp[tIdx + 2];
+      if (maskData) {
+        const maskAlpha = maskData[idx + 3];
+        if (maskAlpha < 10) continue;
+        const tIdx = (r * w + c) * 3;
+        if (maskAlpha < 255) {
+          const blend = maskAlpha / 255;
+          data[idx] = Math.round(data[idx] * (1 - blend) + temp[tIdx] * blend);
+          data[idx + 1] = Math.round(data[idx + 1] * (1 - blend) + temp[tIdx + 1] * blend);
+          data[idx + 2] = Math.round(data[idx + 2] * (1 - blend) + temp[tIdx + 2] * blend);
+        } else {
+          data[idx] = temp[tIdx];
+          data[idx + 1] = temp[tIdx + 1];
+          data[idx + 2] = temp[tIdx + 2];
+        }
+      } else {
+        const tIdx = (r * w + c) * 3;
+        data[idx] = temp[tIdx];
+        data[idx + 1] = temp[tIdx + 1];
+        data[idx + 2] = temp[tIdx + 2];
+      }
     }
   }
 }
@@ -601,7 +666,87 @@ export function autoDetectWatermark(canvas: HTMLCanvasElement): WatermarkBox {
 }
 
 /**
- * Removes multiple watermark boxes sequentially with smooth inpainting.
+ * Checks if a brush mask canvas contains any painted (non-transparent) pixels.
+ */
+export function hasMaskPixels(maskCanvas: HTMLCanvasElement | null): boolean {
+  if (!maskCanvas) return false;
+  const ctx = maskCanvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return false;
+  const w = maskCanvas.width;
+  const h = maskCanvas.height;
+  if (w <= 0 || h <= 0) return false;
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const data = imgData.data;
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] > 10) return true;
+  }
+  return false;
+}
+
+/**
+ * Calculates the exact bounding box around all painted brush mask pixels.
+ */
+export function getMaskBoundingBox(maskCanvas: HTMLCanvasElement): WatermarkBox | null {
+  const ctx = maskCanvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+  const w = maskCanvas.width;
+  const h = maskCanvas.height;
+  if (w <= 0 || h <= 0) return null;
+
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const data = imgData.data;
+
+  let minX = w;
+  let minY = h;
+  let maxX = -1;
+  let maxY = -1;
+  let count = 0;
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const alpha = data[(y * w + x) * 4 + 3];
+      if (alpha > 10) {
+        count++;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (count === 0 || maxX < minX || maxY < minY) return null;
+
+  const pad = 4;
+  const finalX = Math.max(0, minX - pad);
+  const finalY = Math.max(0, minY - pad);
+  const finalW = Math.min(w - finalX, maxX - minX + 1 + pad * 2);
+  const finalH = Math.min(h - finalY, maxY - minY + 1 + pad * 2);
+
+  return {
+    id: 'brush-mask-zone',
+    x: finalX,
+    y: finalY,
+    width: finalW,
+    height: finalH,
+  };
+}
+
+/**
+ * Removes watermarks defined by a free-form painted brush mask using the exact same inpainting engine.
+ */
+export function processBrushMaskRemoval(
+  sourceCanvas: HTMLCanvasElement,
+  brushMaskCanvas: HTMLCanvasElement,
+  settings: RemovalSettings
+): HTMLCanvasElement {
+  const boundingBox = getMaskBoundingBox(brushMaskCanvas);
+  if (!boundingBox) return sourceCanvas;
+  return processWatermarkRemoval(sourceCanvas, boundingBox, settings, brushMaskCanvas);
+}
+
+/**
+ * Removes multiple watermark boxes sequentially and/or free-form painted brush strokes with smooth inpainting.
  */
 export function processMultiWatermarkRemoval(
   sourceCanvas: HTMLCanvasElement,
@@ -609,11 +754,17 @@ export function processMultiWatermarkRemoval(
   settings: RemovalSettings,
   brushMaskCanvas?: HTMLCanvasElement | null
 ): HTMLCanvasElement {
-  if (boxes.length === 0) return sourceCanvas;
-  
+  const hasBrushMask = brushMaskCanvas && hasMaskPixels(brushMaskCanvas);
+  if (boxes.length === 0 && !hasBrushMask) return sourceCanvas;
+
   let currentCanvas = sourceCanvas;
+  // Apply box-based removals
   for (const box of boxes) {
-    currentCanvas = processWatermarkRemoval(currentCanvas, box, settings, brushMaskCanvas);
+    currentCanvas = processWatermarkRemoval(currentCanvas, box, settings);
+  }
+  // Apply free-form brush mask removal using the same engine
+  if (hasBrushMask && brushMaskCanvas) {
+    currentCanvas = processBrushMaskRemoval(currentCanvas, brushMaskCanvas, settings);
   }
   return currentCanvas;
 }
