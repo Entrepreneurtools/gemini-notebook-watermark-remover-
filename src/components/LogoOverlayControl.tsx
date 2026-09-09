@@ -42,11 +42,9 @@ export const LogoOverlayControl: React.FC<LogoOverlayControlProps> = ({
     { label: 'Transparent', color: 'transparent', textColor: '#FFFFFF' },
   ];
 
-  // Handle image upload (horizontal logo, SVG, PNG, WebP, JPG)
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  // Process logo file from input or drag-and-drop
+  const processLogoFile = (file: File) => {
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
@@ -64,6 +62,14 @@ export const LogoOverlayControl: React.FC<LogoOverlayControlProps> = ({
       setTimeout(onRefreshCanvas, 50);
     };
     reader.readAsDataURL(file);
+  };
+
+  // Handle image upload (horizontal logo, SVG, PNG, WebP, JPG)
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processLogoFile(file);
+    e.target.value = '';
   };
 
   const handleRemoveLogoImage = () => {
@@ -311,10 +317,23 @@ export const LogoOverlayControl: React.FC<LogoOverlayControlProps> = ({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                      processLogoFile(e.dataTransfer.files[0]);
+                    }
+                  }}
                   className="w-full p-3 rounded-lg border border-dashed border-slate-700 hover:border-amber-400/60 bg-slate-900/40 hover:bg-slate-900 flex items-center justify-center gap-2 text-slate-300 hover:text-white transition-all cursor-pointer group"
+                  title="Click to browse or drag & drop logo image here"
                 >
                   <UploadCloud className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-                  <span className="font-semibold text-xs">Upload Horizontal Logo / Banner</span>
+                  <span className="font-semibold text-xs">Drag & Drop or Upload Logo</span>
                   <span className="text-[10px] text-slate-500">(PNG, SVG, JPG)</span>
                 </button>
               )}

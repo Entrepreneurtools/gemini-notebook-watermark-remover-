@@ -49,8 +49,14 @@ import { InspectorLoupe } from './components/InspectorLoupe';
 import { RemovalControls } from './components/RemovalControls';
 import { PdfPagesManager } from './components/PdfPagesManager';
 import { DiffHeatmapView } from './components/DiffHeatmapView';
+import { PhotoDropZone } from './components/PhotoDropZone';
+import { GlobalDropOverlay } from './components/GlobalDropOverlay';
 
 export default function App() {
+  // Global Drag and Drop state
+  const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
+  const dragCounter = useRef<number>(0);
+
   // Current Document State
   const [docItem, setDocItem] = useState<DocumentItem | null>(null);
   const [pdfPages, setPdfPages] = useState<PdfPageData[]>([]);
@@ -352,78 +358,178 @@ export default function App() {
     }
   };
 
-  // File Upload Handler (Images & PDFs) - Automatically removes watermark on upload!
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Universal File Processor (Drag & Drop, Manual Upload, or Clipboard Paste)
+  const processFile = useCallback(
+    async (file: File) => {
+      if (!file) return;
 
-    if (file.type === 'application/pdf') {
-      try {
-        setStatusMessage('Reading PDF & automatically removing watermarks across pages...');
-        const buffer = await file.arrayBuffer();
-        const pages = await renderPdfPages(buffer);
-        if (pages.length > 0) {
-          // Auto-clean the first page immediately
-          const firstCanvas = await dataUrlToCanvas(pages[0].originalCanvasDataUrl);
-          setOriginalCanvas(firstCanvas);
+      const isPdf =
+        file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const isImage =
+        file.type.startsWith('image/') ||
+        /\.(png|jpe?g|webp|svg|bmp|gif|avif)$/i.test(file.name);
 
-          const detectedBox = autoDetectWatermark(firstCanvas);
-          setWatermarkBoxes([detectedBox]);
-          setActiveBoxIndex(0);
+      if (isPdf) {
+        try {
+          setStatusMessage(`Reading PDF "${file.name}" & automatically removing watermarks across pages...`);
+          const buffer = await file.arrayBuffer();
+          const pages = await renderPdfPages(buffer);
+          if (pages.length > 0) {
+            // Auto-clean the first page immediately
+            const firstCanvas = await dataUrlToCanvas(pages[0].originalCanvasDataUrl);
+            setOriginalCanvas(firstCanvas);
 
-          // Clean all pages automatically on upload so user can download right away!
-          const cleanedPages: PdfPageData[] = [];
-          for (let i = 0; i < pages.length; i++) {
-            const pageCanvas = await dataUrlToCanvas(pages[i].originalCanvasDataUrl);
-            const box = autoDetectWatermark(pageCanvas);
-            const clean = processWatermarkRemoval(pageCanvas, box, settings);
-            cleanedPages.push({
-              ...pages[i],
-              processedCanvasDataUrl: clean.toDataURL('image/png'),
-              watermarkBox: box,
+            const detectedBox = autoDetectWatermark(firstCanvas);
+            setWatermarkBoxes([detectedBox]);
+            setActiveBoxIndex(0);
+
+            // Clean all pages automatically on upload so user can download right away!
+            const cleanedPages: PdfPageData[] = [];
+            for (let i = 0; i < pages.length; i++) {
+              const pageCanvas = await dataUrlToCanvas(pages[i].originalCanvasDataUrl);
+              const box = autoDetectWatermark(pageCanvas);
+              const clean = processWatermarkRemoval(pageCanvas, box, settings);
+              cleanedPages.push({
+                ...pages[i],
+                processedCanvasDataUrl: clean.toDataURL('image/png'),
+                watermarkBox: box,
+              });
+            }
+
+            setPdfPages(cleanedPages);
+            setCurrentPdfPageIndex(0);
+
+            const firstClean = await dataUrlToCanvas(cleanedPages[0].processedCanvasDataUrl!);
+            setProcessedCanvas(firstClean);
+            setHasProcessed(true);
+            setShowProcessed(true);
+
+            setDocItem({
+              id: 'pdf-' + Date.now(),
+              name: file.name,
+              type: 'pdf',
+              fileSize: file.size,
+              originalUrl: pages[0].originalCanvasDataUrl,
+              processedUrl: firstClean.toDataURL('image/png'),
+              width: firstCanvas.width,
+              height: firstCanvas.height,
+              pageCount: pages.length,
+            });
+
+            setStatusMessage(`✓ All ${pages.length} pages cleaned automatically! Ready to download.`);
+            confetti({
+              particleCount: 50,
+              spread: 60,
+              origin: { y: 0.7 },
             });
           }
-
-          setPdfPages(cleanedPages);
-          setCurrentPdfPageIndex(0);
-
-          const firstClean = await dataUrlToCanvas(cleanedPages[0].processedCanvasDataUrl!);
-          setProcessedCanvas(firstClean);
-          setHasProcessed(true);
-          setShowProcessed(true);
-
-          setDocItem({
-            id: 'pdf-' + Date.now(),
-            name: file.name,
-            type: 'pdf',
-            fileSize: file.size,
-            originalUrl: pages[0].originalCanvasDataUrl,
-            processedUrl: firstClean.toDataURL('image/png'),
-            width: firstCanvas.width,
-            height: firstCanvas.height,
-            pageCount: pages.length,
-          });
-
-          setStatusMessage(`✓ All ${pages.length} pages cleaned automatically! Ready to download.`);
-          confetti({
-            particleCount: 50,
-            spread: 60,
-            origin: { y: 0.7 },
-          });
+        } catch (err) {
+          console.error('PDF load error:', err);
+          setStatusMessage('Failed to parse PDF locally: ' + (err as Error).message);
         }
-      } catch (err) {
-        console.error('PDF load error:', err);
-        alert('Failed to parse PDF locally: ' + (err as Error).message);
+      } else if (isImage) {
+        setStatusMessage(`Loading photo "${file.name}" & automatically removing watermarks...`);
+        const reader = new FileReader();
+        reader.onload = () => {
+          setPdfPages([]);
+          loadImageToCanvas(reader.result as string, file.name, false);
+          confetti({
+            particleCount: 45,
+            spread: 60,
+            origin: { y: 0.65 },
+          });
+        };
+        reader.readAsDataURL(file);
+      } else {
+        setStatusMessage(`Unsupported format: ${file.name}. Please drop a photo (PNG, JPG, WEBP, SVG) or PDF document.`);
       }
-    } else if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setPdfPages([]);
-        loadImageToCanvas(reader.result as string, file.name, false);
-      };
-      reader.readAsDataURL(file);
+    },
+    [loadImageToCanvas, settings]
+  );
+
+  // File Upload Handler (Images & PDFs) - delegates to processFile
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processFile(file);
+      e.target.value = '';
     }
   };
+
+  // Global Drag and Drop and Clipboard Paste Event Listeners
+  useEffect(() => {
+    const handleDragEnter = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter.current += 1;
+      if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+        setIsDraggingFile(true);
+      }
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter.current -= 1;
+      if (dragCounter.current <= 0) {
+        dragCounter.current = 0;
+        setIsDraggingFile(false);
+      }
+    };
+
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    };
+
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter.current = 0;
+      setIsDraggingFile(false);
+
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        processFile(file);
+      }
+    };
+
+    const handlePaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+        return;
+      }
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) {
+            processFile(file);
+            setStatusMessage(`✓ Pasted photo from clipboard (${file.name || 'image.png'})!`);
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('dragenter', handleDragEnter);
+    window.addEventListener('dragleave', handleDragLeave);
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+    window.addEventListener('paste', handlePaste);
+
+    return () => {
+      window.removeEventListener('dragenter', handleDragEnter);
+      window.removeEventListener('dragleave', handleDragLeave);
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
+      window.removeEventListener('paste', handlePaste);
+    };
+  }, [processFile]);
 
   // Sample Loader
   const handleLoadSample = async (sampleType: 'gemini-startup' | 'pdf-report') => {
@@ -540,6 +646,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans selection:bg-indigo-600 selection:text-white">
+      {/* Full-Screen Drag & Drop Overlay */}
+      <GlobalDropOverlay isVisible={isDraggingFile} />
+
       {/* Sleek Navigation Bar with Direct Download Button */}
       <Header
         viewMode={viewMode}
@@ -550,6 +659,7 @@ export default function App() {
         documentName={docItem?.name || ''}
         isPdfDocument={isPdf}
         onQuickDownload={() => (isPdf ? handleDownloadPdf() : handleDownloadImage('png'))}
+        onDropFile={processFile}
       />
 
       {/* Main Workspace Body */}
@@ -659,6 +769,12 @@ export default function App() {
             />
           )}
 
+          {/* Drag & Drop Photo Upload Zone */}
+          <PhotoDropZone
+            onFileSelected={processFile}
+            isDraggingGlobal={isDraggingFile}
+          />
+
           {/* Primary Interactive Stage */}
           <div className="w-full">
             {viewMode === '2d-editor' && (
@@ -675,6 +791,8 @@ export default function App() {
                 isProcessing={isProcessing}
                 onAutoDetect={handleAutoDetect}
                 onApplyRemoval={handleApplyRemoval}
+                onSwitchToCompare={() => setViewMode('split-compare')}
+                onDropFile={processFile}
               />
             )}
 
@@ -682,6 +800,8 @@ export default function App() {
               <ComparisonSlider
                 originalCanvas={originalCanvas}
                 processedCanvas={processedCanvas}
+                watermarkBox={watermarkBox}
+                onSwitchToEditor={() => setViewMode('2d-editor')}
               />
             )}
 

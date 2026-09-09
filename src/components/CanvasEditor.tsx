@@ -6,6 +6,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Check,
+  Columns,
   Crop,
   Eraser,
   Eye,
@@ -16,6 +17,7 @@ import {
   Sparkles,
   Target,
   Trash2,
+  UploadCloud,
   Wand2,
   ZoomIn,
   ZoomOut,
@@ -36,6 +38,8 @@ interface CanvasEditorProps {
   isProcessing?: boolean;
   onAutoDetect?: () => void;
   onApplyRemoval?: () => void;
+  onSwitchToCompare?: () => void;
+  onDropFile?: (file: File) => void;
 }
 
 export const CanvasEditor: React.FC<CanvasEditorProps> = ({
@@ -51,11 +55,17 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   isProcessing = false,
   onAutoDetect,
   onApplyRemoval,
+  onSwitchToCompare,
+  onDropFile,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
   const brushOverlayRef = useRef<HTMLCanvasElement>(null);
   const internalMaskRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Drag-and-drop state inside canvas editor
+  const [isCanvasDragOver, setIsCanvasDragOver] = useState<boolean>(false);
+  const canvasDragCounter = useRef<number>(0);
 
   // Viewport Transform
   const [zoom, setZoom] = useState<number>(1);
@@ -621,16 +631,31 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
           </div>
         ) : null}
 
-        {/* Zoom and Clean/Original Toggle */}
+        {/* Zoom and Clean/Original / Before-After Comparison Buttons */}
         <div className="flex items-center gap-2">
+          {onSwitchToCompare && (
+            <button
+              id="btn-open-before-after"
+              type="button"
+              onClick={onSwitchToCompare}
+              className="px-3 py-1.5 rounded-lg font-semibold bg-gradient-to-r from-indigo-600/90 to-violet-600/90 hover:from-indigo-500 hover:to-violet-500 text-white border border-indigo-500/40 transition-all flex items-center gap-1.5 shadow-sm"
+              title="Open interactive Before / After comparison slider"
+            >
+              <Columns className="w-3.5 h-3.5" />
+              <span>Before / After</span>
+            </button>
+          )}
+
           <button
             id="btn-peek-toggle"
+            type="button"
             onClick={onToggleProcessed}
             className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 ${
               showProcessed
                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
                 : 'bg-slate-800 border border-slate-700 text-slate-300'
             }`}
+            title="Toggle between Original and Cleaned view"
           >
             {showProcessed ? 'Showing: Cleaned' : 'Showing: Original'}
           </button>
@@ -802,13 +827,44 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
           setIsCursorInside(false);
         }}
         onMouseEnter={() => setIsCursorInside(true)}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          canvasDragCounter.current += 1;
+          setIsCanvasDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          canvasDragCounter.current -= 1;
+          if (canvasDragCounter.current <= 0) {
+            canvasDragCounter.current = 0;
+            setIsCanvasDragOver(false);
+          }
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.dataTransfer) {
+            e.dataTransfer.dropEffect = 'copy';
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          canvasDragCounter.current = 0;
+          setIsCanvasDragOver(false);
+          if (e.dataTransfer.files && e.dataTransfer.files.length > 0 && onDropFile) {
+            onDropFile(e.dataTransfer.files[0]);
+          }
+        }}
         className={`relative w-full h-[520px] overflow-hidden flex items-center justify-center bg-slate-950/90 select-none ${
           toolMode === 'pan'
             ? 'cursor-grab active:cursor-grabbing'
             : toolMode === 'brush'
             ? 'cursor-crosshair'
             : 'cursor-default'
-        }`}
+        } ${isCanvasDragOver ? 'ring-2 ring-indigo-500 ring-inset' : ''}`}
         onMouseDown={(e) => {
           if (toolMode === 'pan' || e.button === 1) {
             setIsPanning(true);
@@ -816,6 +872,20 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
           }
         }}
       >
+        {/* Drag & Drop Over Canvas Visual Target */}
+        {isCanvasDragOver && (
+          <div className="absolute inset-0 z-50 bg-indigo-950/85 backdrop-blur-sm border-2 border-dashed border-indigo-400 m-3 rounded-xl flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-150 pointer-events-none shadow-2xl">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white shadow-xl shadow-indigo-600/40 flex items-center justify-center mb-3 animate-bounce">
+              <UploadCloud className="w-8 h-8" />
+            </div>
+            <h3 className="text-lg font-bold text-white tracking-tight mb-1">
+              Drop Photo to Clean Watermark
+            </h3>
+            <p className="text-xs text-indigo-200/90 max-w-sm">
+              Release file here to instantly load image and automatically reconstruct background
+            </p>
+          </div>
+        )}
         {/* Floating Scanner / Brush Status Badge */}
         <div className="absolute top-4 left-4 bg-slate-900/90 backdrop-blur px-3 py-1.5 rounded-full border border-slate-700/80 flex items-center gap-2 shadow-lg pointer-events-none z-20">
           <div

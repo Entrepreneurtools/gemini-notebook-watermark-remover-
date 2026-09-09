@@ -29,6 +29,7 @@ interface HeaderProps {
   documentName: string;
   isPdfDocument?: boolean;
   onQuickDownload?: () => void;
+  onDropFile?: (file: File) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -40,6 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
   documentName,
   isPdfDocument,
   onQuickDownload,
+  onDropFile,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -70,11 +72,11 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Center View Mode Pills */}
-      <div className="hidden sm:flex items-center bg-slate-900 border border-slate-800 p-1 rounded-xl">
+      <div className="flex items-center bg-slate-900 border border-slate-800 p-1 rounded-xl overflow-x-auto max-w-[260px] sm:max-w-none no-scrollbar">
         <button
           id="tab-2d-editor"
           onClick={() => onViewModeChange('2d-editor')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+          className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all shrink-0 ${
             viewMode === '2d-editor'
               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 font-semibold'
               : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -87,20 +89,21 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           id="tab-split-compare"
           onClick={() => onViewModeChange('split-compare')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+          className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all shrink-0 ${
             viewMode === 'split-compare'
               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 font-semibold'
               : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
           }`}
+          title="Before / After interactive comparison"
         >
-          <Columns className="w-3.5 h-3.5" />
-          <span>Split Slider</span>
+          <Columns className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Before / After</span>
         </button>
 
         <button
           id="tab-diff-heatmap"
           onClick={() => onViewModeChange('diff-heatmap')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+          className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all shrink-0 ${
             viewMode === 'diff-heatmap'
               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 font-semibold'
               : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -114,7 +117,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           id="tab-3d-hologram"
           onClick={() => onViewModeChange('3d-hologram')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+          className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all shrink-0 hidden md:flex ${
             viewMode === '3d-hologram'
               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 font-semibold'
               : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -139,10 +142,23 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           id="btn-upload-file"
           onClick={() => fileInputRef.current?.click()}
-          className="px-3.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-800 text-slate-200 text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition-all shadow-sm"
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0 && onDropFile) {
+              onDropFile(e.dataTransfer.files[0]);
+            }
+          }}
+          className="px-3.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-800 text-slate-200 text-xs font-medium border border-slate-700 hover:border-indigo-500/50 flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+          title="Click to select file or drag & drop photo anywhere"
         >
           <Upload className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Upload File</span>
+          <span>Upload / Drop Photo</span>
         </button>
 
         {/* Prominent, Unmissable Top Download Button */}
